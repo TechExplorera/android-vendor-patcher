@@ -1,0 +1,72 @@
+name: VENDOR PATCHER
+
+on:
+  workflow_dispatch:
+    inputs:
+      VENDOR_URL:
+        description: 'Vendor image URL'
+        required: true
+        default: 'https://example.com/vendor.img'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt update
+          sudo apt install -y wget zip unzip e2fsprogs android-sdk-libsparse-utils
+
+      - name: Setup tools
+        run: |
+          mkdir -p tools_bin
+          cd tools_bin
+
+          wget -O simg2img https://raw.githubusercontent.com/anestisb/android-simg2img/master/simg2img
+          wget -O img2simg https://raw.githubusercontent.com/anestisb/android-simg2img/master/img2simg
+          chmod +x *
+
+      - name: Download vendor.img
+        run: |
+          mkdir -p work output
+          wget "${{ github.event.inputs.VENDOR_URL }}" -O work/vendor.img
+
+      - name: Convert sparse to raw
+        run: |
+          cd work
+          ../tools_bin/simg2img vendor.img vendor_raw.img
+
+      - name: Mount image
+        run: |
+          mkdir -p work/mnt
+          sudo mount -o loop work/vendor_raw.img work/mnt
+
+      - name: Patch vendor fstab
+        run: bash tools/patch_vendor.sh work/mnt
+
+      - name: Sync changes
+        run: sync
+
+      - name: Unmount
+        run: sudo umount work/mnt
+
+      - name: Repack image
+        run: |
+          cd work
+          ../tools_bin/img2simg vendor_raw.img vendor_patched.img
+
+      - name: Package output
+        run: |
+          cp work/vendor_patched.img output/
+          cd output
+          zip -r vendor_patched.zip .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vendor_patched
+          path: output/vendor_patched.zip
