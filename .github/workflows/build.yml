@@ -1,7 +1,12 @@
-name: Vendor.img Safe Patcher
+name: VENDOR PATCHER
 
 on:
   workflow_dispatch:
+    inputs:
+      VENDOR_URL:
+        description: 'Vendor image URL'
+        required: true
+        default: 'https://example.com/vendor.img'
 
 jobs:
   build:
@@ -14,7 +19,7 @@ jobs:
       - name: Install tools
         run: |
           sudo apt update
-          sudo apt install -y e2fsprogs android-sdk-libsparse-utils wget zip
+          sudo apt install -y wget zip unzip e2fsprogs android-sdk-libsparse-utils
 
       - name: Setup tools
         run: |
@@ -25,23 +30,22 @@ jobs:
           wget -O img2simg https://raw.githubusercontent.com/anestisb/android-simg2img/master/img2simg
           chmod +x *
 
-      - name: Prepare workspace
-        run: mkdir -p work output
-
-      - name: Load vendor.img
-        run: cp input/vendor.img work/
+      - name: Download vendor.img
+        run: |
+          mkdir -p work output
+          wget "${{ github.event.inputs.VENDOR_URL }}" -O work/vendor.img
 
       - name: Convert sparse to raw
         run: |
           cd work
           ../tools_bin/simg2img vendor.img vendor_raw.img
 
-      - name: Mount vendor
+      - name: Mount image
         run: |
           mkdir -p work/mnt
           sudo mount -o loop work/vendor_raw.img work/mnt
 
-      - name: Patch fstab only
+      - name: Patch vendor fstab
         run: bash tools/patch_vendor.sh work/mnt
 
       - name: Sync changes
@@ -50,20 +54,19 @@ jobs:
       - name: Unmount
         run: sudo umount work/mnt
 
-      - name: Repack vendor
+      - name: Repack image
         run: |
           cd work
           ../tools_bin/img2simg vendor_raw.img vendor_patched.img
 
       - name: Package output
         run: |
-          mkdir -p output
           cp work/vendor_patched.img output/
           cd output
           zip -r vendor_patched.zip .
 
-      - name: Upload
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: vendor_img_patched
-          path: output/
+          name: vendor_patched
+          path: output/vendor_patched.zip
